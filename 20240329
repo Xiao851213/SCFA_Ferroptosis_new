@@ -1,0 +1,534 @@
+library(Seurat)
+library(ggplot2)
+library(stringr)
+library(ggsci)
+library(org.Hs.eg.db)
+library(tidyverse)
+library(showtext)
+library(scales)
+library(reshape2)
+library(patchwork)
+library(pheatmap)
+library(DoubletFinder)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(cowplot)
+library(REdaS)
+library(qdapTools)
+library(clusterProfiler)
+library(RCurl)
+library(stringr)
+library(XML)
+library(clustree)
+library(enrichplot)
+library(GOplot)
+library(DOSE)
+library(ggnewscale)
+library(topGO)
+library(circlize)
+library(ComplexHeatmap)
+library(msigdbr)
+library(GSVA)
+library(future)
+library(ggrepel)
+library(harmony)
+library(ArchR)
+
+setwd("D:/Work01/MI/scfa")
+#sma <- readRDS("E:/BaiduNetdiskDownload/All-snRNA-Spatial multi-omic map of human myocardial infarction.RDS")
+
+mycolor1<-pal_npg("nrc", alpha = 1)(10)
+mycolor2<-pal_aaas("default", alpha = 1)(10)
+mycolor3<-pal_nejm("default", alpha = 1)(8)
+mycolor4<-pal_lancet("lanonc", alpha = 1)(9)
+mycolor5<-pal_jama("default", alpha = 1)(7)
+mycolor6<-pal_jco("default", alpha = 1)(10)
+mycolor <-c(mycolor3,mycolor1,mycolor2,mycolor4,mycolor5,mycolor6)
+
+#gene ID translation
+ids = mapIds(org.Hs.eg.db, keys =rownames(sma),   column = 'SYMBOL',keytype = 'ENSEMBL')
+ids <- as.data.frame(ids)
+ids$SYMBOL <-ids$ids
+ids$ENSEMBL <- rownames(ids)
+ids=na.omit(ids)
+ids=ids[!duplicated(ids$SYMBOL),]
+ids=ids[!duplicated(ids$ENSEMBL),]
+pos=match(ids$ENSEMBL,rownames(sma) )
+sma=sma[pos,]
+#write a function
+RenameGenesSeurat <- function(obj , 
+                              newnames ) { 
+  # Replace gene names in different slots of a Seurat object. Run this before integration. Run this before integration. 
+  # It only changes obj@assays$RNA@counts, @data and @scale.data.
+  print("Run this before integration. It only changes obj@assays$RNA@counts, @data and @scale.data.")
+  RNA <- obj@assays$RNA
+  if (nrow(RNA) == length(newnames)) {
+    if (length(RNA@counts)) RNA@counts@Dimnames[[1]]            <- newnames
+    if (length(RNA@data)) RNA@data@Dimnames[[1]]                <- newnames
+    if (length(RNA@scale.data)) RNA@scale.data@Dimnames[[1]]    <- newnames
+  } else {"Unequal gene sets: nrow(RNA) != nrow(newnames)"}
+  obj@assays$RNA <- RNA
+  return(obj)
+}
+obj=RenameGenesSeurat(obj = sma, 
+                  newnames = ids$SYMBOL)
+sma <-obj
+head(rownames(sma))
+Idents(sma) <- sma@meta.data$cell_type_original
+
+
+#Figure1A
+p1 <- DimPlot(sma, reduction = "umap",cols = mycolor, group.by = "cell_type_original", label = F, pt.size=0.5, label.size = 6,  raster = F)
+p2 <- p1 + ggtitle('Cell Types in Human Myocardial Infarction')
+ggsave(plot=p2, filename="sma_umap_cell_type.pdf",width = 5.5, height = 4)
+
+
+#Figure1B-C
+#ferroptosis geneset
+atf3_promters <- c('FOXP3', 'HNF1B', 'AR', 'ETS1', 'RBPJ', 'PPARA', 'RXRA', 'JUN', 'YY1', 
+'AHR', 'POU2F1', 'SRF', 'TBP', 'MYB', 'AHR', 'ARNT', 
+'ELK1', 'IKZF1', 'NFIC', 'ETV4', 'MYC', 'LEF1', 'ATF1', 'USF2', 
+'RB1', 'XBP1', 'GCFC2', 'IRF1', 'NF1', 'ESR1', 'STAT5A', 'USF1', 
+'HNF1A', 'CREB1', 'NFATC2', 'PGR', 'GTF2I', 'C8ORF88', 'NFATC2', 'E2F2', 'E2F3',
+'THRA', 'CEBPA', 'VDR', 'NR2F1', 'ATF2', 'EGR3', 'FOXA1', 'E2F1', 
+'CEBPB', 'RARB', 'RXRA', 'ENKTF-1', 'TEAD2', 'HOXD9', 'PXR1', 'RXRA', 
+'FOS', 'ATF', 'GR', 'PAX5', 'EBF', 'SRY', 'ETS2', 'MAZ', 'HOXD10', 'NFKB', 
+'NFY', 'TBP', 'GRB', 'P53', 'RXRA', 'TCF4E', 'RARB', 'MEF2A', 'RELA', 
+'NFAT2', 'GATA1', 'ATF3', 'HNF1C', 'SP1', 'STAT4', 'AP2AA', 'IRF2', 'AP1', 
+'STAT1B', 'WT1', 'NFKB1', 'GATA2')
+atf3_promters <- unique(atf3_promters)
+p1 <- DotPlot(sma,features = atf3_promters)+ RotatedAxis() +ggplot2:::coord_flip()
+ggsave(p1,file="sma_atf3_promters_dot_type.pdf",width = 7.5, height = 15)
+p2 <- DotPlot(sma,features = atf3_promters, group.by = 'major_labl')+ RotatedAxis() +ggplot2:::coord_flip()
+ggsave(p2,file="sma_atf3_promters_dot_group.pdf",width = 5, height = 15)
+
+scfa <- c('ATF3' )
+
+hsa04216 <- c('SLC3A2', 'SLC7A11', 'TP53', 'GCLC', 'GCLM', 'GSS', 'GPX4', 
+'ACSL6', 'ACSL4', 'ACSL1', 'ACSL5', 'ACSL3', 'LPCAT3', 'ALOX15', 'SAT2', 
+'SAT1', 'TF', 'TFRC', 'STEAP3', 'SLC11A2', 'SLC39A8', 'SLC39A14', 'PCBP2', 
+'SLC40A1', 'CP', 'PCBP1', 'FTH1', 'FTL', 'MAP1LC3C', 'MAP1LC3B', 'MAP1LC3A', 
+'MAP1LC3B2', 'ATG5', 'ATG7', 'NCOA4', 'PRNP', 'HMOX1', 'VDAC2', 'VDAC3', 'CYBB', 'FTMT')
+
+WP4313 <- c('CHMP5', 'COQ2', 'PCBP1', 'FDFT1', 'AKR1C1', 'ACSL1', 'PHKG2', 'STEAP3', 
+'AIFM2', 'POR', 'VDAC2', 'PRNP', 'CHMP6', 'TF', 'TXNRD1', 'NOX1', 'MAP1LC3B', 'AKR1C3', 'GCLC', 'CYBB', 
+'SLC3A2', 'FTMT', 'IREB2', 'CISD1', 'MAP1LC3C', 'GCH1', 'SLC39A8', 'HSPB1', 'HMGCR', 'ATG5', 'HMOX1', 'NOX2', 
+'PCBP2', 'CTH', 'DPP4', 'CBS', 'BACH1', 'FTH1', 'TFRC', 'NOX4', 'GPX4', 'SLC39A14', 'SLC40A1', 'SLC7A11', 
+'GCLM', 'GSS', 'ALOX15', 'SAT1', 'SAT2', 'TP53', 'LPCAT3', 'ACSL3', 'ACSL4', 'ACSL6', 'ACSL5', 'TF', 
+'TFRC', 'CP', 'PCBP2', 'FTL', 'NCOA4', 'FTH1', 'FTL', 'MAP1LC3A', 'ATG7', 'TF', 'TFRC', 'SLC11A2', 'SLC39A8', 
+'SLC39A14', 'VDAC3', 'SLC1A5', 'SLC38A1', 'BACH1', 'AIFM2', 'AKR1C2', 'ALOX15')
+
+ferroptosis_geneset <- c(hsa04216, WP4313)
+ferroptosis_geneset <- unique(ferroptosis_geneset)
+ferroptosis_geneset <- setdiff(ferroptosis_geneset, scfa)
+
+ 
+sample <- sma
+DefaultAssay(sample) <- "RNA"
+expdata <- GetAssayData(sample)
+Pop1 <- ferroptosis_geneset
+pops<-list(Pop1)
+#Z-Scores
+z_scores<-NULL
+for (i in 1:length(pops)) {
+genes <- pops[[i]]
+zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
+av <- numeric(ncol(expdata))
+geneExp <- as.matrix(expdata[zz, ])
+geneExp <- t(scale(t(geneExp)))
+geneExp[is.nan(geneExp)] <- 0
+z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
+}
+sample@meta.data$ferroptosis_geneset_z<-z_scores[1,]
+p1 <- DotPlot(object=sample, features = "ferroptosis_geneset_z", group.by = 'cell_type_original') 
+p1
+ggsave(p1,file="Z_sma_ferroptosis_pathway_dot_celltype.pdf",width = 4, height = 4)
+p1 <- DotPlot(object=sample, features = "ferroptosis_geneset_z", group.by = 'major_labl') 
+p1
+ggsave(p1,file="Z_sma_ferroptosis_pathway_dot_group.pdf",width = 3.5, height = 4)
+
+
+#Figure1B-C
+atf3_promters <- 
+c('FOXP3', 'TFIID', 'PRB', 'PRA', 'HNF3A', 'GR', 
+'GRB', 'HNF1C', 'HNF1B', 'CMYB', 'XBP1', 'GTF2I', 
+'E2F1', 'PAX5', 'P53', 'SP1', 'AR', 'AHR', 
+'ARNT', 'GCF', 'GRA', 'CEBPB', 'EBF', 'RXRA', 
+'STAT4', 'CETS1', 'ELK1', 'IRF1', 'NFAT1', 'RARB', 
+'RXRA', 'SRY', 'TCF4E', 'AP2AA', 'RBPJK', 'IK1', 
+'NF1', 'E2F', 'ENKTF1', 'CETS2', 'RARB', 'IRF2', 
+'PPARA','RBPJK', 'RXRA', 'NFI', 'CTF', 'ERA', 
+'T3RB1', 'ETF', 'MAZ', 'MEF2A', 'AP1', 'CJUN', 
+'PEA3', 'STAT5A', 'CEBPA', 'HOXD9', 'HOXD10', 
+'RELA', 'STAT1B', 'YY1', 'CMYC', 'USF1', 'VDR', 
+'PXR1', 'CJUN','RXRA', 'NFKB', 'NFAT2', 'WT1', 
+'AHR', 'LEF1', 'HNF1A', 'COUPTF1', 'CFOS', 'NFY', 
+'GATA1', 'NFKB1', 'POU2F1', 'ATF1', 'CREB', 'ATF2', 
+'ATF', 'TBP',  'GATA2', 'SRF', 'USF2', 'NFAT1', 'EGR3')
+atf3_promters <- unique(atf3_promters)
+Pop1 <- atf3_promters
+pops<-list(Pop1)
+#Z-Scores
+z_scores<-NULL
+for (i in 1:length(pops)) {
+genes <- pops[[i]]
+zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
+av <- numeric(ncol(expdata))
+geneExp <- as.matrix(expdata[zz, ])
+geneExp <- t(scale(t(geneExp)))
+geneExp[is.nan(geneExp)] <- 0
+z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
+}
+sample@meta.data$atf3_promters_z<-z_scores[1,]
+p1 <- DotPlot(object=sample, features = "atf3_promters_z", group.by = 'cell_type_original')  #+ RotatedAxis() +ggplot2:::coord_flip()
+p1
+ggsave(p1,file="Z_sma_atf3_promters_dot_celltype.pdf",width = 4, height = 4)
+p1 <- DotPlot(object=sample, features = "atf3_promters_z", group.by = 'major_labl')  #+ RotatedAxis() #+ggplot2:::coord_flip()
+p1
+ggsave(p1,file="Z_sma_atf3_promters_dot_group.pdf",width = 3.5, height = 4)
+
+scfa_dot_sma <- DotPlot(sma, features = scfa, group.by = "cell_type_original") #+ RotatedAxis() +ggplot2:::coord_flip()
+scfa_dot_sma
+ggsave(plot=scfa_dot_sma, filename="sma_dot_scfa.pdf",width = 4, height = 4)
+scfa_dot_sma_group <- DotPlot(sma, features = scfa, group.by = "major_labl") #+ RotatedAxis() +ggplot2:::coord_flip()
+scfa_dot_sma_group
+ggsave(plot=scfa_dot_sma_group, filename="sma_dot_scfa_group.pdf",width = 3.5, height = 4)
+
+#Figure 1D
+p1 <- VlnPlot(sma, features = 'ATF3',group.by = 'major_labl', raster=FALSE)
+ggsave(plot=p1, filename="sma_vln_region_atf3.pdf",width = 5, height = 4)
+
+
+
+#Supplemental_Figure2
+sample.list <- SplitObject(sample, split.by = "major_labl")
+sample.BZ <- sample.list$BZ
+sample.FZ <- sample.list$FZ
+sample.IZ <- sample.list$IZ
+sample.RZ <- sample.list$RZ
+sample.CTRL <- sample.list$CTRL
+
+p1 <- DotPlot(object=sample.BZ, features = 'ferroptosis_geneset_z', group.by = 'cell_type_original') +ggtitle('Border Zone') 
+p2 <- DotPlot(object=sample.IZ, features = 'ferroptosis_geneset_z', group.by = 'cell_type_original')  +ggtitle('Ischemic Zone') 
+p3 <- DotPlot(object=sample.FZ, features = 'ferroptosis_geneset_z', group.by = 'cell_type_original')  +ggtitle('Fibrotic Zone') 
+p4 <- DotPlot(object=sample.RZ, features = 'ferroptosis_geneset_z', group.by = 'cell_type_original')  +ggtitle('Remote Zone') 
+p5 <- DotPlot(object=sample.CTRL, features = 'ferroptosis_geneset_z', group.by = 'cell_type_original')  +ggtitle('Control Sample') 
+p6 <- p1 | p2 | p3 | p4 | p5  
+ggsave(p6,file="Z_sma_ferroptosis_dot_cellstate.pdf",width = 20, height = 4)
+
+p1 <- DotPlot(object=sample.BZ, features = scfa, group.by = 'cell_type_original') +ggtitle('Border Zone')#+ RotatedAxis()  
+p2 <- DotPlot(object=sample.IZ, features = scfa, group.by = 'cell_type_original')  +ggtitle('Ischemic Zone')#+ RotatedAxis() 
+p3 <- DotPlot(object=sample.FZ, features = scfa, group.by = 'cell_type_original')  +ggtitle('Fibrotic Zone')#+ RotatedAxis()  
+p4 <- DotPlot(object=sample.RZ, features = scfa, group.by = 'cell_type_original')  +ggtitle('Remote Zone')#+ RotatedAxis()  
+p5 <- DotPlot(object=sample.CTRL, features = scfa, group.by = 'cell_type_original')  +ggtitle('Control Sample')#+ RotatedAxis()  
+p6 <- p1 | p2 | p3 | p4 | p5  
+ggsave(p6,file="Z_sma_scfa_dot_cellstate.pdf",width = 20, height = 4)
+
+p1 <- DotPlot(object=sample.BZ, features = 'atf3_promters_z', group.by = 'cell_type_original') +ggtitle('Border Zone')#+ RotatedAxis()  
+p2 <- DotPlot(object=sample.IZ, features = 'atf3_promters_z', group.by = 'cell_type_original')  +ggtitle('Ischemic Zone')#+ RotatedAxis() 
+p3 <- DotPlot(object=sample.FZ, features = 'atf3_promters_z', group.by = 'cell_type_original')  +ggtitle('Fibrotic Zone')#+ RotatedAxis()  
+p4 <- DotPlot(object=sample.RZ, features = 'atf3_promters_z', group.by = 'cell_type_original')  +ggtitle('Remote Zone')#+ RotatedAxis()  
+p5 <- DotPlot(object=sample.CTRL, features = 'atf3_promters_z', group.by = 'cell_type_original')  +ggtitle('Control Sample')#+ RotatedAxis()  
+p6 <- p1 | p2 | p3 | p4 | p5
+ggsave(p6,file="Z_sma_atf3_promters_dot_cellstate.pdf",width = 20, height = 4)
+
+
+ 
+
+#extract the cardiomyocyte data, reduction, and clustering
+sma.list <- SplitObject(sma, split.by = "cell_type_original")
+sma_cm <- sma.list$Cardiomyocyte
+sma_cm[['RNA']]@meta.features <- data.frame(row.names = rownames(sma_cm[['RNA']]))
+sma_cm <- NormalizeData(sma_cm, normalization.method = "LogNormalize", scale.factor = 10000)
+sma_cm <- FindVariableFeatures(sma_cm, selection.method = "vst", nfeatures = 3000)
+all.genes <- rownames(sma_cm)
+sma_cm <- ScaleData(sma_cm, features = all.genes)
+sma_cm <- RunPCA(sma_cm, features = VariableFeatures(object = sma_cm))
+ElbowPlot(sma_cm,ndims = 30)
+sma_cm <- RunUMAP(sma_cm, dims = 1:30)
+sma_cm <- FindNeighbors(sma_cm, dims = 1:30)
+sma_cm <- FindClusters(sma_cm, resolution = 0.1)
+
+#Supplemental_Figure3A
+p1 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "major_labl",raster=FALSE)
+ggsave(p1,file="sma_cm_umap_group_precorrect.pdf",width = 5, height = 4)
+p2 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "sample",raster=FALSE)
+ggsave(p2,file="sma_cm_umap_sample_precorrect.pdf",width = 6, height = 4)
+p3 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "seurat_clusters",label = TRUE,raster=FALSE)
+ggsave(p3,file="sma_cm_umap_seurat_clusters_precorrect.pdf",width = 5, height = 4)
+
+sma_cm <- RunHarmony(sma_cm,plot_convergence = TRUE, lambda = 0.5,group.by.vars = 'sample')
+sma_cm <- RunUMAP(sma_cm, reduction = "harmony", dims = 1:30)
+sma_cm <- FindNeighbors(sma_cm, reduction = "harmony", dims = 1:30)
+
+seq <- seq(0, 1, by = 0.1)
+for(res in seq){
+  sma_cm <- FindClusters(object = sma_cm, method = "igraph",resolution = res)
+}
+sma_cm_clustree <- clustree(sma_cm, prefix = 'RNA_snn_res.') + coord_flip()
+sma_cm_clustree
+ggsave(sma_cm_clustree,file="sma_cm_clustree.pdf",width = 15, height = 10)
+
+sma_cm <- RunUMAP(sma_cm, reduction = "harmony", dims = 1:30, min.dist = 0.01, n.neighbors=25)
+sma_cm <- FindClusters(sma_cm, resolution = 0.8)
+
+#Supplemental_Figure3B
+p1 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "major_labl",raster=FALSE)
+ggsave(p1,file="sma_cm_umap_group_pocorrect.pdf",width = 5, height = 4)
+p2 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "sample",raster=FALSE)
+ggsave(p2,file="sma_cm_umap_sample_pocorrect.pdf",width = 6, height = 4)
+p3 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, group.by = "seurat_clusters",label = TRUE,raster=FALSE)
+ggsave(p3,file="sma_cm_umap_seurat_clusters_pocorrect.pdf",width = 5, height = 4)
+
+#Supplemental_Figure3C
+#cell density
+library(viridis)
+library(ggpointdensity)
+obj <- sma_cm
+obj_list <- SplitObject(obj, split.by = "major_labl")
+obj_BZ <- obj_list$BZ
+obj_CTRL <- obj_list$CTRL
+obj_FZ <- obj_list$FZ
+obj_IZ <- obj_list$IZ
+obj_RZ <- obj_list$RZ
+seurat_obj <- obj_BZ
+data <- cbind(Embeddings(object=seurat_obj[['umap']]),FetchData(seurat_obj,'seurat_clusters'))
+p1 <- ggplot(data = data, mapping = aes(x = UMAP_1, y = UMAP_2)) +
+ geom_pointdensity() + #密度散点图（geom_pointdensity）
+ scale_color_viridis()+theme_bw() + ggtitle('Border Zone')
+seurat_obj <- obj_IZ
+data <- cbind(Embeddings(object=seurat_obj[['umap']]),FetchData(seurat_obj,'seurat_clusters'))
+p2 <- ggplot(data = data, mapping = aes(x = UMAP_1, y = UMAP_2)) +
+ geom_pointdensity() + #密度散点图（geom_pointdensity）
+ scale_color_viridis()+theme_bw() + ggtitle('Ischemic Zone')
+seurat_obj <- obj_FZ
+data <- cbind(Embeddings(object=seurat_obj[['umap']]),FetchData(seurat_obj,'seurat_clusters'))
+p3 <- ggplot(data = data, mapping = aes(x = UMAP_1, y = UMAP_2)) +
+ geom_pointdensity() + #密度散点图（geom_pointdensity）
+ scale_color_viridis()+theme_bw() + ggtitle('Fibrotic Zone')
+seurat_obj <- obj_RZ
+data <- cbind(Embeddings(object=seurat_obj[['umap']]),FetchData(seurat_obj,'seurat_clusters'))
+p4 <- ggplot(data = data, mapping = aes(x = UMAP_1, y = UMAP_2)) +
+ geom_pointdensity() + #密度散点图（geom_pointdensity）
+ scale_color_viridis()+theme_bw() + ggtitle('Remote Zone')
+seurat_obj <- obj_CTRL
+data <- cbind(Embeddings(object=seurat_obj[['umap']]),FetchData(seurat_obj,'seurat_clusters'))
+p5 <- ggplot(data = data, mapping = aes(x = UMAP_1, y = UMAP_2)) +
+ geom_pointdensity() + #密度散点图（geom_pointdensity）
+ scale_color_viridis()+theme_bw() + ggtitle('Ctrl Sample')
+p <- (p1 + p2 + p3) / (p4 + p5 + plot_spacer())
+ggsave(p,file="sma_cm_umap_dencity.pdf",width = 15, height = 8)
+
+#cell cluster annotation
+metadata <- sma_cm@meta.data
+metadata$cell_state <- 'NA'
+metadata$cell_state[which(metadata$seurat_clusters == 0)] = "CM0"
+metadata$cell_state[which(metadata$seurat_clusters == 1)] = "CM01"
+metadata$cell_state[which(metadata$seurat_clusters == 2)] = "CM02"
+metadata$cell_state[which(metadata$seurat_clusters == 3)] = "CM03"
+metadata$cell_state[which(metadata$seurat_clusters == 4)] = "CM04"
+metadata$cell_state[which(metadata$seurat_clusters == 5)] = "CM05"
+metadata$cell_state[which(metadata$seurat_clusters == 6)] = "CM06"
+metadata$cell_state[which(metadata$seurat_clusters == 7)] = "CM07"
+metadata$cell_state[which(metadata$seurat_clusters == 8)] = "CM08"
+metadata$cell_state[which(metadata$seurat_clusters == 9)] = "CM09"
+metadata$cell_state[which(metadata$seurat_clusters == 10)] = "CM10"
+metadata$cell_state[which(metadata$seurat_clusters == 11)] = "CM11"
+metadata$cell_state[which(metadata$seurat_clusters == 12)] = "CM12"
+metadata$cell_state[which(metadata$seurat_clusters == 13)] = "CM13"
+sma_cm@meta.data <- metadata
+Idents(sma_cm) <- sma_cm@meta.data$cell_state
+my_levels <- c('CM0', 'CM01', 'CM02', 'CM03', 'CM04', 'CM05',  "CM06", 'CM07', 'CM08', 'CM09',  "CM10",  "CM11",  "CM12",  "CM13")
+Idents(sma_cm) <- factor(Idents(sma_cm), levels = my_levels)
+
+#Supplemental_Figure4A
+p2 <- DimPlot(sma_cm, reduction = "umap", cols = mycolor, split.by = 'major_labl', pt.size = 1, label = TRUE, ncol = 2, raster=FALSE)
+ggsave(p2,file="sma_cm_umap_cluster_split.pdf",width = 10, height = 12)
+
+#Supplemental_Figure4B
+# finding marker genes of each subcluster
+sma_cm_marker <- FindAllMarkers(sma_cm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+sma_cm_marker <- subset(sma_cm_marker, avg_log2FC <= -1 | avg_log2FC >= 1)
+sma_cm_marker <- subset(sma_cm_marker, p_val <= 0.05)
+sma_cm_marker %>%
+    group_by(cluster) %>%
+   top_n(n = 3, wt = avg_log2FC) -> sma_cm_marker_top3
+gene.state <- sma_cm_marker_top3$gene
+gene.state <- unique(gene.state)
+CM_Dot <- DotPlot(sma_cm, features = gene.state,assay = 'RNA') + RotatedAxis() +ggplot2:::coord_flip()
+CM_Dot
+ggsave(plot=CM_Dot, filename="sma_cm_dot_state.pdf",width = 7.5, height = 8)
+saveRDS(sma_cm, file = "sma_cm.RDS")
+#sma_cm <- readRDS("D:/Work01/MI/scfa/sma_cm.RDS") 
+
+
+#Supplemental_Figure4C
+#cell proportion bar plot
+plotC <- table(sma_cm@meta.data$major_labl, sma_cm@meta.data$cell_state)  %>% melt()
+colnames(plotC) <- c("Group", "Cell_Type","Number")
+write.csv(plotC,file = 'sma_cm_propotion_cell_type_group.csv')
+#colomplot
+pC1 <- ggplot(data = plotC, aes(x = Group, y = Number, fill = as.factor(Cell_Type))) +
+geom_bar(stat = "identity", width=0.8,aes(group=Cell_Type),position="stack")+
+scale_fill_manual(values=mycolor) +
+theme_bw()+
+theme(panel.grid =element_blank()) +
+labs(x="",y="Average number")+
+theme(axis.text = element_text(size=12, colour = "black"))+
+theme(axis.title.y = element_text(size=12, colour = "black"))+
+theme(panel.border = element_rect(size = 1, linetype = "solid", colour = "black"))+
+theme(axis.text.x = element_text(angle = 45,hjust = 0.8, vjust = 0.6))
+#ratioplot
+pC2 <- ggplot(data = plotC, aes(x = Group, y = Number, fill = as.factor(Cell_Type))) +
+geom_bar(stat = "identity", width=0.8,aes(group=Cell_Type),position="fill")+
+scale_fill_manual(values=mycolor) +
+theme_bw()+
+theme(panel.grid =element_blank()) +
+labs(x="",y="Cell proportion")+
+scale_y_continuous(labels = percent)+ ####move y axi
+theme(axis.text = element_text(size=12, colour = "black"))+
+theme(axis.title.y = element_text(size=12, colour = "black"))+
+theme(panel.border = element_rect(size = 1, linetype = "solid", colour = "black"))+
+theme(axis.text.x = element_text(angle = 45,hjust = 0.8, vjust = 0.6))#?????????45?
+#bind two plot
+p4 <- pC1 + pC2 + plot_layout(ncol = 2, widths = c(1,1),guides = 'collect')
+#save plot
+ggsave(p4,file="sma_cm_Propotion_Group.pdf",width = 7.5, height = 5)
+
+#Supplemental_Figure4D
+plotC <- table(sma_cm@meta.data$sample, sma_cm@meta.data$cell_state) %>% melt()
+colnames(plotC) <- c("Sample", "Cell_Type","Number")
+write.csv(plotC,file = 'sma_cm_propotion_Cell_Type_Sample.csv')
+#colomplot
+pC1 <- ggplot(data = plotC, aes(x = Sample, y = Number, fill = as.factor(Cell_Type))) +
+geom_bar(stat = "identity", width=0.8,aes(group=Cell_Type),position="stack")+
+scale_fill_manual(values=mycolor) +
+theme_bw()+
+theme(panel.grid =element_blank()) +
+labs(x="",y="Average number")+
+theme(axis.text = element_text(size=12, colour = "black"))+
+theme(axis.title.y = element_text(size=12, colour = "black"))+
+theme(panel.border = element_rect(size = 1, linetype = "solid", colour = "black"))+
+theme(axis.text.x = element_text(angle = 45,hjust = 0.8, vjust = 0.6))
+#ratioplot
+pC2 <- ggplot(data = plotC, aes(x = Sample, y = Number, fill = as.factor(Cell_Type))) +
+geom_bar(stat = "identity", width=0.8,aes(group=Cell_Type),position="fill")+
+scale_fill_manual(values=mycolor) +
+theme_bw()+
+theme(panel.grid =element_blank()) +
+labs(x="",y="Cell proportion")+
+scale_y_continuous(labels = percent)+ ####move y axi
+theme(axis.text = element_text(size=12, colour = "black"))+
+theme(axis.title.y = element_text(size=12, colour = "black"))+
+theme(panel.border = element_rect(size = 1, linetype = "solid", colour = "black"))+
+theme(axis.text.x = element_text(angle = 45,hjust = 0.8, vjust = 0.6))#?????????45?
+#bind two plot
+p5 <- pC1 + pC2 + plot_layout(ncol = 1, guides = 'collect')
+#save plot
+ggsave(p5,file="sma_cm_Propotion_Sample.pdf",width = 10, height = 6)
+
+
+#Figure1E
+p1 <- DimPlot(sma_cm, reduction = "umap",cols = mycolor, group.by = 'cell_state', label = T, pt.size=1, label.size = 4,  raster = F)
+p2 <- p1 + ggtitle('Cardiomyocyte Subpopulations')
+ggsave(plot=p2, filename="sma_cm_umap_cell_type.pdf",width = 5.5, height = 4)
+
+#Figure1F-G
+sample <- sma_cm
+DefaultAssay(sample) <- "RNA"
+expdata <- GetAssayData(sample)
+Pop1 <- ferroptosis_geneset
+pops<-list(Pop1)
+#Z-Scores
+z_scores<-NULL
+for (i in 1:length(pops)) {
+genes <- pops[[i]]
+zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
+av <- numeric(ncol(expdata))
+geneExp <- as.matrix(expdata[zz, ])
+geneExp <- t(scale(t(geneExp)))
+geneExp[is.nan(geneExp)] <- 0
+z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
+}
+sample@meta.data$ferroptosis_geneset_z<-z_scores[1,]
+p1 <- DotPlot(object=sample, features = "ferroptosis_geneset_z", group.by = 'cell_state') 
+p1
+ggsave(p1,file="Z_smacm_ferroptosis_pathway_dot_cellstate.pdf",width = 3.5, height = 4)
+p1 <- DotPlot(object=sample, features = "ferroptosis_geneset_z", group.by = 'major_labl') 
+p1
+ggsave(p1,file="Z_smacm_ferroptosis_pathway_dot_group.pdf",width = 3.5, height = 4)
+
+
+p1 <- DotPlot(sma_cm,features = scfa,group.by = 'major_labl') + RotatedAxis()
+ggsave(plot=p1, filename="sma_cm_dot_region_scfa.pdf",width = 3.5, height = 4)
+p1 <- DotPlot(sma_cm,features = scfa,group.by = 'cell_state') + RotatedAxis()
+ggsave(plot=p1, filename="sma_cm_dot_state_scfa.pdf",width = 3.5, height = 4)
+
+Pop1 <- atf3_promters
+pops<-list(Pop1)
+#Z-Scores
+z_scores<-NULL
+for (i in 1:length(pops)) {
+genes <- pops[[i]]
+zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
+av <- numeric(ncol(expdata))
+geneExp <- as.matrix(expdata[zz, ])
+geneExp <- t(scale(t(geneExp)))
+geneExp[is.nan(geneExp)] <- 0
+z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
+}
+sample@meta.data$atf3_promters_z<-z_scores[1,]
+p1 <- DotPlot(object=sample, features = "atf3_promters_z", group.by = 'cell_state') 
+p1
+ggsave(p1,file="Z_smacm_atf3_promters_dot_celltype.pdf",width = 3.5, height = 4)
+p1 <- DotPlot(object=sample, features = "atf3_promters_z", group.by = 'major_labl') 
+p1
+ggsave(p1,file="Z_smacm_atf3_promters_dot_group.pdf",width = 3.5, height = 4)
+
+ 
+
+#Figure1H
+expr <-sma_cm@assays$RNA$counts
+gene_expression <-expr %>% .['ATF3',] %>% as.data.frame() 
+gene_expression <- as.data.frame(gene_expression)
+colnames(gene_expression) <- 'ATF3'
+gene_expression$cell <- rownames(gene_expression)
+gene_expression_sel <-gene_expression[which(gene_expression$ATF3>0),]
+cm_ATF3 <-sma_cm[,rownames(gene_expression_sel)]
+dim(gene_expression_sel)/dim(gene_expression)
+p2 <- VlnPlot(cm_ATF3, features = 'ATF3',group.by = 'major_labl')
+ggsave(plot=p2, filename="sma_cm_vln_region_atf3_positive.pdf",width = 5, height = 4)
+
+
+#Supplemental_Figure5
+sample.list <- SplitObject(sample, split.by = "major_labl")
+sample.BZ <- sample.list$BZ
+sample.FZ <- sample.list$FZ
+sample.IZ <- sample.list$IZ
+sample.RZ <- sample.list$RZ
+sample.CTRL <- sample.list$CTRL
+
+p1 <- DotPlot(object=sample.BZ, features = 'ferroptosis_geneset_z', group.by = 'cell_state') +ggtitle('Border Zone') 
+p2 <- DotPlot(object=sample.IZ, features = 'ferroptosis_geneset_z', group.by = 'cell_state')  +ggtitle('Ischemic Zone') 
+p3 <- DotPlot(object=sample.FZ, features = 'ferroptosis_geneset_z', group.by = 'cell_state')  +ggtitle('Fibrotic Zone') 
+p4 <- DotPlot(object=sample.RZ, features = 'ferroptosis_geneset_z', group.by = 'cell_state')  +ggtitle('Remote Zone') 
+p5 <- DotPlot(object=sample.CTRL, features = 'ferroptosis_geneset_z', group.by = 'cell_state')  +ggtitle('Control Sample') 
+p6 <- p1 | p2 | p3 | p4 | p5
+ggsave(p6,file="Z_sma_cm_ferroptosis_dot_cellstate.pdf",width = 17.5, height = 4)
+
+p1 <- DotPlot(object=sample.BZ, features = scfa, group.by = 'cell_state') +ggtitle('Border Zone') 
+p2 <- DotPlot(object=sample.IZ, features = scfa, group.by = 'cell_state')  +ggtitle('Ischemic Zone') 
+p3 <- DotPlot(object=sample.FZ, features = scfa, group.by = 'cell_state')  +ggtitle('Fibrotic Zone') 
+p4 <- DotPlot(object=sample.RZ, features = scfa, group.by = 'cell_state')  +ggtitle('Remote Zone') 
+p5 <- DotPlot(object=sample.CTRL, features = scfa, group.by = 'cell_state')  +ggtitle('Control Sample') 
+p6 <- p1 | p2 | p3 | p4 | p5
+ggsave(p6,file="Z_sma_cm_scfa_dot_cellstate.pdf",width = 17.5, height = 4)
+
+p1 <- DotPlot(object=sample.BZ, features = "atf3_promters_z", group.by = 'cell_state') +ggtitle('Border Zone') 
+p2 <- DotPlot(object=sample.IZ, features = "atf3_promters_z", group.by = 'cell_state')  +ggtitle('Ischemic Zone') 
+p3 <- DotPlot(object=sample.FZ, features = "atf3_promters_z", group.by = 'cell_state')  +ggtitle('Fibrotic Zone') 
+p4 <- DotPlot(object=sample.RZ, features = "atf3_promters_z", group.by = 'cell_state')  +ggtitle('Remote Zone') 
+p5 <- DotPlot(object=sample.CTRL, features = "atf3_promters_z", group.by = 'cell_state')  +ggtitle('Control Sample') 
+p6 <- p1 | p2 | p3 | p4 | p5
+ggsave(p6,file="Z_sma_cm_atf3_promters_dot_cellstate.pdf",width = 17.5, height = 4)
